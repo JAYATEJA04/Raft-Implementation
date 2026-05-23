@@ -5,34 +5,14 @@ import (
 	"net/rpc"
 )
 
-type Args struct {
-	A, B int
-}
-
-type Reply struct {
-	Result int
-}
-
 func main() {
-	client, err := rpc.Dial("tcp", "localhost:8080")
-	if err != nil {
-		fmt.Println("Error connecting: ", err)
-		return
-	}
-
-	defer client.Close()
-
-	args := &Args{3, 4}
+	client, _ := rpc.Dial("tcp", "localhost:1234")
+	args := &SaveArgs{"username", "golang_user"}
 	var result Reply
-	
-	err = client.Call("Calculator.Multiply", args, &result)
-	if err != nil {
-		fmt.Println("Error calling calculator.Multiply: ", err)
-		return
+
+	err := client.Call("DataStore.SaveData", args, &result)
+	fmt.Println(result.Success)
+	if err == nil && result.Success {
+		fmt.Println("Data stored succesfully")
 	}
-
-	mainClientResult := result
-
-	fmt.Println("Result of multiplication: ", result)
-	fmt.Printf("\nand the type is: %T", mainClientResult)
 }

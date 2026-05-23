@@ -1,56 +1,39 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"net/rpc"
+	"sync"
 )
 
-type Args struct {
-	A, B, C int
+type DataStore struct {
+	mu sync.Mutex
+	Items map[string]string
 }
 
-type Reply struct {
-	Result int
-}
+func (ds *DataStore) SaveData(args *SaveArgs, reply *Reply) error {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
 
-type Storage struct {
-	value int
-}
-
-type Calculator struct{}
-
-func (arith *Calculator) Add(args *Args, reply *Reply) error {
-	reply.Result = args.A + args.B
-	return nil
-}
-
-func (arith *Calculator) Multiply(args *Args, reply *Reply) error {
-	reply.Result = args.A * args.B
-	return nil
-}
-
-func (arith *Calculator) Divide(args *Args, reply *Reply) error {
-	if args.B == 0 {
-		return errors.New("cannot divide by zero")
-	}
-
-	reply.Result = args.A / args.B
+	ds.Items[args.Key] = args.Value
+	fmt.Printf("Node stored: [%s] = %s\n", args.Key, args.Value)
+	reply.Success = true
 	return nil
 }
 
 func main() {
-	calc := new(Calculator)
-	rpc.Register(calc)
+	store := &DataStore{Items: make(map[string]string)}
+	rpc.Register(store)
 
-	listener, err := net.Listen("tcp", ":8080")
+	listener, err := net.Listen("tcp", ":1234")
+
 	if err != nil {
 		fmt.Println("Error listening: ", err)
 		return
 	}
 	defer listener.Close()
 
-	fmt.Println("Server is listening on port :8080...")
+	fmt.Println("Server is listening on port :1234....")
 	rpc.Accept(listener)
 }
