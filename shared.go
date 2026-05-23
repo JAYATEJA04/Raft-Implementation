@@ -8,3 +8,12 @@ type SaveArgs struct {
 type Reply struct {
 	Success bool
 }
+
+type GetArgs struct {
+	Key string
+}
+
+type GetReply struct {
+	Value string
+	Successs bool
+}

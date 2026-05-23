@@ -22,6 +22,23 @@ func (ds *DataStore) SaveData(args *SaveArgs, reply *Reply) error {
 	return nil
 }
 
+func (ds *DataStore) GetData(args *GetArgs, reply *GetReply) error {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+
+	value, exists := ds.Items[args.Key]
+
+	if exists {
+		reply.Value = value
+		reply.Successs = true
+		fmt.Printf("Node : Providing data for the Key %s\n", args.Key)
+	} else {
+		reply.Successs = false
+		fmt.Printf("Node : Key not found %s\n", args.Key)
+	}
+	return nil
+}
+
 func main() {
 	store := &DataStore{Items: make(map[string]string)}
 	rpc.Register(store)
