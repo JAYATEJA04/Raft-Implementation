@@ -5,8 +5,8 @@ import (
 	"net/rpc"
 )
 
-func fetch (key string) {
-	client, _ := rpc.Dial("tcp", "localhost:1234")
+func fetch(key string) {
+	client, _ := rpc.Dial("tcp", "localhost:8001")
 
 	args1 := &GetArgs{key}
 	var response GetReply
@@ -22,15 +22,16 @@ func fetch (key string) {
 }
 
 func main() {
-	client, _ := rpc.Dial("tcp", "localhost:1234")
+	client, err := rpc.Dial("tcp", "localhost:8001")
+
+	if err != nil {
+		fmt.Printf("Connection error: %v. Is the server runnong on port 8001?\n", err)
+		return
+	}
 	args := &SaveArgs{"username", "golang_user"}
 	var result Reply
 
-	//GET
-	// args1 := &GetArgs{"username"}
-	// var response GetReply
-
-	err := client.Call("DataStore.SaveData", args, &result)
+	err = client.Call("DataStore.SaveData", args, &result)
 	fmt.Println(result.Success)
 	if err == nil && result.Success {
 		fmt.Println("Data stored succesfully")
