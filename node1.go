@@ -9,6 +9,14 @@ import (
 	"sync"
 )
 
+// type State int
+//
+//	type Node struct {
+//		id            string
+//		peers         []string
+//		state         State
+//		lastHeartBeat time.Time
+//	}
 type DataStore struct {
 	mu    sync.Mutex
 	Items map[string]string
@@ -56,23 +64,7 @@ func (ds *DataStore) GetData(args *GetArgs, reply *GetReply) error {
 	return nil
 }
 
-func appendEntries() {}
-
 func main() {
-	// store := &DataStore{Items: make(map[string]string)}
-	// rpc.Register(store)
-
-	// listener, err := net.Listen("tcp", ":8081")
-
-	// if err != nil {
-	// 	fmt.Println("Error listening: ", err)
-	// 	return
-	// }
-	// defer listener.Close()
-
-	// fmt.Println("Server is listening on port :1234....")
-	// rpc.Accept(listener)
-
 	port := flag.String("port", "8001", "Port to listen on")
 	secondary := flag.String("addresses", "", "comma-separated secondary addresses")
 	flag.Parse()

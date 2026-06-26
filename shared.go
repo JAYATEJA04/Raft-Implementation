@@ -1,7 +1,7 @@
 package main
 
 type SaveArgs struct {
-	Key string
+	Key   string
 	Value string
 }
 
@@ -14,6 +14,15 @@ type GetArgs struct {
 }
 
 type GetReply struct {
-	Value string
+	Value    string
 	Successs bool
 }
+
+// type RaftNode struct {
+// 	mu            sync.Mutex
+// 	Id            int
+// 	Port          string
+// 	Peers         []string
+// 	State         State
+// 	LastHeartBeat time.Time
+// }

@@ -10,6 +10,7 @@ func fetch(key string) {
 
 	args1 := &GetArgs{key}
 	var response GetReply
+	fmt.Println(response.Successs)
 
 	err0 := client.Call("DataStore.GetData", args1, &response)
 	if err0 != nil {
@@ -28,13 +29,16 @@ func main() {
 		fmt.Printf("Connection error: %v. Is the server runnong on port 8001?\n", err)
 		return
 	}
-	args := &SaveArgs{"username", "golang_user"}
+	defer client.Close()
+	args := &SaveArgs{"username2", "golang_user2"}
 	var result Reply
 
-	err = client.Call("DataStore.SaveData", args, &result)
+	err = client.Call("RaftNode.StartRaftLoop", args, &result)
+	// err = client.Call("DataStore.SaveData", args, &result)
 	fmt.Println(result.Success)
 	if err == nil && result.Success {
 		fmt.Println("Data stored succesfully")
-		fetch("username")
+		// time.Sleep(2 * time.Second)
+		// fetch("username2")
 	}
 }
