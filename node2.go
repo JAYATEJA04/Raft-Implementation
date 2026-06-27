@@ -58,8 +58,18 @@ func (n *Node) Stop() {
 }
 
 func main() {
-	node := NewNode("node-alpha", 3*time.Second)
-	node.Start()
+	// node := NewNode("node-alpha", 3*time.Second)
+	// node.Start()
+
+	peers := []string{"8001", "8002", "8003", "8004", "8005"}
+	var node Node
+	var count int
+
+	for range peers {
+		node := NewNode("node-alpha", 3*time.Second)
+		count++
+		go node.Start()
+	}
 
 	shutdownSig := make(chan os.Signal, 1)
 	signal.Notify(shutdownSig, os.Interrupt, syscall.SIGTERM)
