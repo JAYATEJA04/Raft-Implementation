@@ -74,6 +74,8 @@ func main() {
 		node.NodeAddresses = strings.Split(*secondary, ",")
 	}
 
+	fmt.Println("node.nodeaddresses: ", node.NodeAddresses)
+
 	rpc.Register(node)
 	listener, _ := net.Listen("tcp", ":"+*port)
 	fmt.Printf("Node started on %s. Replicating to: %v\n", *port, node.NodeAddresses)

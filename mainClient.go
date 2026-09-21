@@ -33,8 +33,8 @@ func main() {
 	args := &SaveArgs{"username2", "golang_user2"}
 	var result Reply
 
-	err = client.Call("RaftNode.StartRaftLoop", args, &result)
-	// err = client.Call("DataStore.SaveData", args, &result)
+	// err = client.Call("RaftNode.StartRaftLoop", args, &result)
+	err = client.Call("DataStore.SaveData", args, &result)
 	fmt.Println(result.Success)
 	if err == nil && result.Success {
 		fmt.Println("Data stored succesfully")

@@ -1,81 +1,181 @@
 package main
 
 import (
-	"context"
+	"flag"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
+	"math/rand/v2"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
 
+//	type Node struct {
+//		ID       int
+//		Interval time.Duration
+//		ctx      context.Context
+//		cancel   context.CancelFunc
+//	}
+
 type Node struct {
-	ID       string
-	Interval time.Duration
-	ctx      context.Context
-	cancel   context.CancelFunc
+	mu          sync.Mutex
+	ID          int
+	currentTerm int
+	votedFor    []int
+	state       string
+	peers       []int
 }
 
-func NewNode(nodeID string, interval time.Duration) *Node {
-	ctx, cancel := context.WithCancel(context.Background())
+type RequestVoteArgs struct {
+	Term        int
+	CandidateID int
+}
+
+type RequestVoteReply struct {
+	Term        int
+	VoteGranted bool
+}
+
+// func NewNode(nodeID int, interval time.Duration) *Node {
+// 	ctx, cancel := context.WithCancel(context.Background())
+// 	return &Node{
+// 		ID:       nodeID,
+// 		Interval: interval,
+// 		ctx:      ctx,
+// 		cancel:   cancel,
+// 	}
+// }
+
+func NewNode(nodeID int, state string, peerNodes []int) *Node {
 	return &Node{
-		ID:       nodeID,
-		Interval: interval,
-		ctx:      ctx,
-		cancel:   cancel,
+		ID:          nodeID,
+		currentTerm: 0,
+		votedFor:    nil,
+		state:       state,
+		peers:       peerNodes,
 	}
 }
 
-func (n *Node) Start() {
-	fmt.Printf("[Node %s] Initialising and starting node services...\n", n.ID)
-	go n.runHeartBeatLoop()
+func (n *Node) sendRequestVoteRPC(peerIdx int, args *RequestVoteArgs, Reply *RequestVoteReply) bool {
+	n.mu.Lock()
+	node := n.peers[peerIdx]
+	defer n.mu.Unlock()
+
+	if node == 0 {
+		return false
+	}
+
+	fmt.Println("node: ", node, peerIdx, n.ID)
+
+	return true
 }
 
-func (n *Node) runHeartBeatLoop() {
-	ticker := time.NewTicker(n.Interval)
-	defer ticker.Stop()
+func (n *Node) callElectionLeader() {
+	n.mu.Lock()
+	n.state = "Candidate"
+	n.votedFor = append(n.votedFor, n.ID)
+	n.currentTerm++
+	// fmt.Println("here, here: ", n.ID, n.currentTerm, n.votedFor, n.state)
+	defer n.mu.Unlock()
 
-	fmt.Printf("[Node %s] Heartbeat timer loop has started.\n", n.ID)
+	for idx, peer := range n.peers {
+		if peer == n.ID {
+			fmt.Println("matched, peer = n.Id!", peer, n.currentTerm, n.votedFor, n.state)
+			continue
+		}
+		// fmt.Println("peer: ", peer)
+
+		go func(peerIdx int) {
+			args := RequestVoteArgs{
+				Term:        n.currentTerm,
+				CandidateID: n.ID,
+			}
+			var reply RequestVoteReply
+			call := n.sendRequestVoteRPC(peerIdx, &args, &reply)
+			fmt.Println("call: ", call)
+		}(idx)
+	}
+}
+
+func (n *Node) RequestVote(CandidateID *Node, Term *Node) error {
+	fmt.Println("hey hey 1")
+	return nil
+}
+
+func (n *Node) Start(wg *sync.WaitGroup) {
+	// fmt.Print("hi hi hi hi")
+	defer wg.Done()
+	timeout := time.Duration(150+rand.IntN(150)) * time.Millisecond
+	timer := time.NewTimer(timeout)
+
+	heartBeatTimer := time.Duration(50+rand.IntN(50)) * time.Millisecond
+	// heartbeatTicker := time.NewTicker(50 * time.Millisecond)
+	// heartBeatTicker := time.NewTicker(heartBeatTimer)
+	heartBeatTicker := time.NewTicker(heartBeatTimer)
 
 	for {
 		select {
-		case <-n.ctx.Done():
-			fmt.Printf("[Node %s] Stopping heartbeat gracefully", n.ID)
+		case msg := <-heartBeatTicker.C:
+			fmt.Println("Received message", msg.Format("15:04:05.000"), n.ID)
+		case <-timer.C:
+			fmt.Println("Timeout!", timeout, n.ID)
+			n.callElectionLeader()
+			time.Sleep(15 * time.Millisecond)
 			return
-		case t := <-ticker.C:
-			n.sendHeartBeat(t)
+			// fmt.Println("hello")
+			// timer.Stop()
 		}
 	}
 }
 
-func (n *Node) sendHeartBeat(t time.Time) {
-	fmt.Printf("[Node %s] has sent Heartbeat to cluster at %s\n", n.ID, t.Format("15:04:05"))
-}
-
-func (n *Node) Stop() {
-	fmt.Printf("[Node %s] shutting down node...\n", n.ID)
-	n.cancel()
-}
-
 func main() {
-	// node := NewNode("node-alpha", 3*time.Second)
-	// node.Start()
+	port := flag.Int("port", 8001, "port-number")
+	portMates := flag.String("peers", "", "port-mates")
+	flag.Parse()
 
-	peers := []string{"8001", "8002", "8003", "8004", "8005"}
-	var node Node
-	var count int
+	var wg sync.WaitGroup
 
-	for range peers {
-		node := NewNode("node-alpha", 3*time.Second)
-		count++
-		go node.Start()
+	convertedPortMates := strings.Split(*portMates, ",")
+	intSlice := make([]int, 0, len(convertedPortMates))
+
+	for _, peer := range convertedPortMates {
+		if num, err := strconv.Atoi(strings.TrimSpace(peer)); err == nil {
+			intSlice = append(intSlice, num)
+		}
 	}
 
-	shutdownSig := make(chan os.Signal, 1)
-	signal.Notify(shutdownSig, os.Interrupt, syscall.SIGTERM)
+	// fmt.Printf("Type of portMates: %T & Type of port: %T\n", portMates, port)
+	// fmt.Println("port:", *port, ", converted portMates:", convertedPortMates, ", integer slice: ", intSlice)
 
-	<-shutdownSig
-	node.Stop()
+	// for _, p := range RaftNode.peers {
+	// 	wg.Add(1)
+	// 	node := NewNode(p, "Follower")
+	// 	nodes = append(nodes, node)
+	// 	// count++
+	// 	// time.Sleep(1500 * time.Millisecond)
+	// 	go node.Start(&wg)
+	// }
 
-	time.Sleep(500 * time.Millisecond)
+	// RaftNode := &Node{
+	// 	ID:    *port,
+	// 	state: "Follower",
+	// 	peers: intSlice,
+	// }
+
+	registeredNode := NewNode(*port, "Follower", intSlice)
+
+	wg.Add(1)
+	go registeredNode.Start(&wg)
+	fmt.Println("oi oi oi")
+
+	// time.Sleep(1000 * time.Millisecond)
+	wg.Wait()
+
+	// shutdownSig := make(chan os.Signal, 1)
+	// signal.Notify(shutdownSig, os.Interrupt, syscall.SIGTERM)
+	// <-shutdownSig
+	// fmt.Println("shutdown signal received, stopping nodes...")
+	// for _, n := range nodes {
+	// 	n.Stop()
+	// }
 }

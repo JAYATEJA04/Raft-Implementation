@@ -1,28 +1,25 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"sync"
-	"time"
+	"strings"
 )
 
-func worker(id int, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	fmt.Printf("Worker %d starting\n", id)
-	time.Sleep(time.Second)
-	fmt.Printf("Worker %d terminating\n", id)
-}
-
 func main() {
-	var wg sync.WaitGroup
+	// 1. Define the flag (returns a string pointer)
+	portMatesRaw := flag.String("peers", "", "comma-separated list of port mates")
+	flag.Parse()
 
-	for i := 1; i <= 3; i++ {
-		wg.Add(1)
-		time.Sleep(3 * time.Second)
-		go worker(i, &wg)
+	// 2. Handle empty input safely
+	if *portMatesRaw == "" {
+		fmt.Println("No peers provided.")
+		return
 	}
 
-	wg.Wait()
-	fmt.Println("finished all workers. exiting program.")
+	// 3. Split the single string into a slice (array) of strings
+	portMates := strings.Split(*portMatesRaw, ",")
+
+	// Now portMates is a []string slice: ["8081", "8082", "8083"]
+	fmt.Printf("Parsed slice: %v (Type: %T)\n", portMates, portMates)
 }
