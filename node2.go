@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"math/rand/v2"
+	"net"
+	"net/rpc"
 	"strconv"
 	"strings"
 	"sync"
@@ -11,24 +13,33 @@ import (
 )
 
 //	type Node struct {
-//		ID       int
+//		NodeID       int
 //		Interval time.Duration
 //		ctx      context.Context
 //		cancel   context.CancelFunc
 //	}
 
+type LogEntry struct {
+	Command interface{}
+	Term    int
+}
 type Node struct {
 	mu          sync.Mutex
-	ID          int
+	NodeID      int
+	port        int
 	currentTerm int
-	votedFor    []int
+	votedFor    int
+	Log         []LogEntry
 	state       string
 	peers       []int
+	Heartbeat   chan bool
 }
 
 type RequestVoteArgs struct {
-	Term        int
-	CandidateID int
+	Term         int
+	CandidateID  int
+	lastLogIndex int
+	lastLogTerm  int
 }
 
 type RequestVoteReply struct {
@@ -39,91 +50,144 @@ type RequestVoteReply struct {
 // func NewNode(nodeID int, interval time.Duration) *Node {
 // 	ctx, cancel := context.WithCancel(context.Background())
 // 	return &Node{
-// 		ID:       nodeID,
+// 		NodeID:       nodeID,
 // 		Interval: interval,
 // 		ctx:      ctx,
 // 		cancel:   cancel,
 // 	}
 // }
 
-func NewNode(nodeID int, state string, peerNodes []int) *Node {
+func NewNode(nodeID int, port int, state string, peerNodes []int) *Node {
 	return &Node{
-		ID:          nodeID,
+		NodeID:      nodeID,
+		port:        port,
 		currentTerm: 0,
-		votedFor:    nil,
 		state:       state,
 		peers:       peerNodes,
+		Log:         make([]LogEntry, 1),
 	}
 }
 
-func (n *Node) sendRequestVoteRPC(peerIdx int, args *RequestVoteArgs, Reply *RequestVoteReply) bool {
-	n.mu.Lock()
-	node := n.peers[peerIdx]
-	defer n.mu.Unlock()
+func printHandleFunction(conn net.Conn, wg *sync.WaitGroup) {
+	defer wg.Done()
+	defer conn.Close()
+	fmt.Println("hey hey 1")
+}
 
-	if node == 0 {
+func (n *Node) StartServer(wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	listener, err := net.Listen("tcp", ":"+strconv.Itoa(n.port))
+
+	if err != nil {
+		fmt.Println("Error starting listener: ", err)
+		return
+	}
+	defer listener.Close()
+
+	fmt.Println("inside startserver function", n.port)
+
+	for {
+		fmt.Println("inside for loop")
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println("Accept error: ", err)
+			continue
+		}
+		n.Heartbeat <- true
+		wg.Add(1)
+		go printHandleFunction(conn, wg)
+	}
+}
+
+// func (n *Node) RequestVoteRPC(term int, candidateID int, lastLogIndex int, lastLogTerm int) (int, bool) {
+// 	/*
+// 	 */
+// }
+
+func (n *Node) sendRequestVoteRPC(peerPort int, args *RequestVoteArgs, Reply *RequestVoteReply) bool {
+	_, err := rpc.Dial("tcp", "localhost:"+strconv.Itoa(peerPort))
+	if err != nil {
+		fmt.Println("Failed to connect %s\n", peerPort)
 		return false
 	}
-
-	fmt.Println("node: ", node, peerIdx, n.ID)
+	// listener.Call("Node.RequestVoteRPC", &candidateID, args)
+	// fmt.Println("connected successfully to: ", peerPort)
 
 	return true
+}
+
+func (n *Node) getLastLogTerm() int {
+	lastLogIndex := len(n.Log) - 1
+	lastLogTerm := n.Log[lastLogIndex].Term
+
+	return lastLogTerm
+}
+
+func (n *Node) getLastLogIndex() int {
+	lastLongIndex := len(n.Log) - 1
+
+	return lastLongIndex
 }
 
 func (n *Node) callElectionLeader() {
 	n.mu.Lock()
 	n.state = "Candidate"
-	n.votedFor = append(n.votedFor, n.ID)
+	n.votedFor = n.NodeID
 	n.currentTerm++
-	// fmt.Println("here, here: ", n.ID, n.currentTerm, n.votedFor, n.state)
+	// fmt.Println("here, here: ", n.NodeID, n.currentTerm, n.votedFor, n.state)
 	defer n.mu.Unlock()
 
-	for idx, peer := range n.peers {
-		if peer == n.ID {
-			fmt.Println("matched, peer = n.Id!", peer, n.currentTerm, n.votedFor, n.state)
-			continue
-		}
+	for _, peer := range n.peers {
+		// if peer == n.port {
+		// 	fmt.Println("matched, peer = n.Id!", n.NodeID, peer, n.currentTerm, n.votedFor, n.state)
+		// 	continue
+		// }
 		// fmt.Println("peer: ", peer)
 
-		go func(peerIdx int) {
+		go func(peer int) {
 			args := RequestVoteArgs{
-				Term:        n.currentTerm,
-				CandidateID: n.ID,
+				Term:         n.currentTerm,
+				CandidateID:  n.NodeID,
+				lastLogIndex: n.getLastLogIndex(),
+				lastLogTerm:  n.getLastLogTerm(),
 			}
 			var reply RequestVoteReply
-			call := n.sendRequestVoteRPC(peerIdx, &args, &reply)
+			call := n.sendRequestVoteRPC(peer, &args, &reply)
 			fmt.Println("call: ", call)
-		}(idx)
+		}(peer)
 	}
 }
 
-func (n *Node) RequestVote(CandidateID *Node, Term *Node) error {
-	fmt.Println("hey hey 1")
-	return nil
+func getNewtimer() time.Duration {
+	timeoutPeriod := time.Duration(150+rand.IntN(150)) * time.Millisecond
+	return timeoutPeriod
 }
 
-func (n *Node) Start(wg *sync.WaitGroup) {
-	// fmt.Print("hi hi hi hi")
-	defer wg.Done()
-	timeout := time.Duration(150+rand.IntN(150)) * time.Millisecond
-	timer := time.NewTimer(timeout)
+func (n *Node) RunElectionLoop() {
+	newTimeoutPeriod := getNewtimer()
+	timer := time.NewTimer(newTimeoutPeriod)
 
-	heartBeatTimer := time.Duration(50+rand.IntN(50)) * time.Millisecond
-	// heartbeatTicker := time.NewTicker(50 * time.Millisecond)
-	// heartBeatTicker := time.NewTicker(heartBeatTimer)
-	heartBeatTicker := time.NewTicker(heartBeatTimer)
+	// heartbeatTicker := time.Duration(50+rand.IntN(20)) * time.Millisecond
+	// // heartbeatTicker := time.NewTicker(50 * time.Millisecond)
+	// // heartBeatTicker := time.NewTicker(heartBeatTimer)
+	// heartBeatTicker := time.NewTicker(heartbeatTicker)
 
 	for {
 		select {
-		case msg := <-heartBeatTicker.C:
-			fmt.Println("Received message", msg.Format("15:04:05.000"), n.ID)
+		// case msg := <-heartBeatTicker.C:
+		// 	fmt.Println("ticker", msg.Format("15:04:05.000"), n.port)
+		case <-n.Heartbeat:
+			fmt.Println("Node received a message. Resetting timer......")
+			if !timer.Stop() {
+				<-timer.C
+			}
+			timer.Reset(time.Duration(150+rand.IntN(150)) * time.Millisecond)
 		case <-timer.C:
-			fmt.Println("Timeout!", timeout, n.ID)
+			fmt.Println("Timeout!", newTimeoutPeriod, n.port)
 			n.callElectionLeader()
-			time.Sleep(15 * time.Millisecond)
-			return
-			// fmt.Println("hello")
-			// timer.Stop()
+			newTimeoutPeriod = getNewtimer()
+			timer.Reset(newTimeoutPeriod)
 		}
 	}
 }
@@ -135,12 +199,12 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	convertedPortMates := strings.Split(*portMates, ",")
-	intSlice := make([]int, 0, len(convertedPortMates))
+	splittedPortMates := strings.Split(*portMates, ",")
+	convertedPortMates := make([]int, 0, len(splittedPortMates))
 
-	for _, peer := range convertedPortMates {
+	for _, peer := range splittedPortMates {
 		if num, err := strconv.Atoi(strings.TrimSpace(peer)); err == nil {
-			intSlice = append(intSlice, num)
+			convertedPortMates = append(convertedPortMates, num)
 		}
 	}
 
@@ -157,18 +221,24 @@ func main() {
 	// }
 
 	// RaftNode := &Node{
-	// 	ID:    *port,
+	// 	NodeID:    *port,
 	// 	state: "Follower",
 	// 	peers: intSlice,
 	// }
 
-	registeredNode := NewNode(*port, "Follower", intSlice)
+	registeredNode := NewNode(1, *port, "Follower", convertedPortMates)
+	// fmt.Println(convertedPortMates, *port)
 
 	wg.Add(1)
-	go registeredNode.Start(&wg)
-	fmt.Println("oi oi oi")
+	// time.Sleep(500 * time.Millisecond)
+	// registeredNode.Start(&wg)
+	go registeredNode.StartServer(&wg)
+	registeredNode.RunElectionLoop()
 
 	// time.Sleep(1000 * time.Millisecond)
+	// select {}
+	// time.Sleep(5000 * time.Millisecond)
+	fmt.Println("oi oi oi")
 	wg.Wait()
 
 	// shutdownSig := make(chan os.Signal, 1)

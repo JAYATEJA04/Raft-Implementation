@@ -34,6 +34,7 @@ func (ds *DataStore) SaveData(args *SaveArgs, reply *Reply) error {
 
 	for _, addr := range ds.NodeAddresses {
 		go func(target string) {
+			fmt.Println("target: ", target)
 			client, err := rpc.Dial("tcp", target)
 			if err != nil {
 				fmt.Println("failed to reach %s\n", target)
@@ -41,7 +42,7 @@ func (ds *DataStore) SaveData(args *SaveArgs, reply *Reply) error {
 			}
 			defer client.Close()
 			var secondaryReply Reply
-			client.Call("DataStore.SaveData", args, &secondaryReply)
+			client.Call("DataStore.GetData", args, &secondaryReply)
 		}(addr)
 	}
 	reply.Success = true
