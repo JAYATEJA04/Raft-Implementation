@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"math/rand/v2"
 	"net"
 	"net/rpc"
@@ -38,8 +39,8 @@ type Node struct {
 type RequestVoteArgs struct {
 	Term         int
 	CandidateID  int
-	lastLogIndex int
-	lastLogTerm  int
+	LastLogIndex int
+	LastLogTerm  int
 }
 
 type RequestVoteReply struct {
@@ -77,6 +78,12 @@ func printHandleFunction(conn net.Conn, wg *sync.WaitGroup) {
 func (n *Node) StartServer(wg *sync.WaitGroup) {
 	defer wg.Done()
 
+	rpcServer := rpc.NewServer()
+	registrationErr := rpcServer.Register(n)
+	if registrationErr != nil {
+		log.Fatalf("Node%d failed to register RPC: %v", n.NodeID, registrationErr)
+	}
+
 	listener, err := net.Listen("tcp", ":"+strconv.Itoa(n.port))
 
 	if err != nil {
@@ -94,26 +101,67 @@ func (n *Node) StartServer(wg *sync.WaitGroup) {
 			fmt.Println("Accept error: ", err)
 			continue
 		}
-		n.Heartbeat <- true
 		wg.Add(1)
-		go printHandleFunction(conn, wg)
+		go func(c net.Conn) {
+			defer wg.Done()
+			rpcServer.ServeConn(conn)
+		}(conn)
 	}
 }
 
-// func (n *Node) RequestVoteRPC(term int, candidateID int, lastLogIndex int, lastLogTerm int) (int, bool) {
-// 	/*
-// 	 */
-// }
+func (n *Node) RequestVoteRPC(args *RequestVoteArgs, reply *RequestVoteReply) error {
+	fmt.Println("inside request vote RPC")
+	n.mu.Lock()
+	defer n.mu.Unlock()
 
-func (n *Node) sendRequestVoteRPC(peerPort int, args *RequestVoteArgs, Reply *RequestVoteReply) bool {
-	_, err := rpc.Dial("tcp", "localhost:"+strconv.Itoa(peerPort))
+	if args.Term > n.currentTerm {
+		n.currentTerm = args.Term
+		n.state = "Follower"
+		n.votedFor = -1
+	}
+
+	if args.Term < n.currentTerm {
+		reply.Term = n.currentTerm
+		reply.VoteGranted = false
+		return nil
+	}
+
+	localLastLogIndex := len(n.Log) - 1
+	localLastLogTerm := n.Log[localLastLogIndex].Term
+
+	logUptoDate := false
+	if args.LastLogTerm > localLastLogTerm {
+		logUptoDate = true
+	} else if args.LastLogTerm == localLastLogTerm && args.LastLogIndex >= localLastLogIndex {
+		logUptoDate = true
+	}
+
+	if (n.votedFor == -1 || n.votedFor == args.CandidateID) && logUptoDate {
+		n.votedFor = args.CandidateID
+		reply.VoteGranted = true
+	} else {
+		reply.VoteGranted = false
+	}
+	reply.Term = n.currentTerm
+	return nil
+}
+
+func (n *Node) SendRequestVoteRPC(peerPort int, args *RequestVoteArgs, Reply *RequestVoteReply) bool {
+	listener, err := rpc.Dial("tcp", "localhost:"+strconv.Itoa(peerPort))
 	if err != nil {
-		fmt.Println("Failed to connect %s\n", peerPort)
+		fmt.Println("Failed to connect %s", peerPort)
 		return false
 	}
-	// listener.Call("Node.RequestVoteRPC", &candidateID, args)
-	// fmt.Println("connected successfully to: ", peerPort)
 
+	defer listener.Close()
+
+	err1 := listener.Call("Node.RequestVoteRPC", args, Reply)
+	// time.Sleep(1000 * time.Millisecond)
+	fmt.Println("after request vote RPC")
+	if err1 != nil {
+		fmt.Println("callOk is not ok", n.port, err1)
+		return false
+	}
 	return true
 }
 
@@ -149,11 +197,12 @@ func (n *Node) callElectionLeader() {
 			args := RequestVoteArgs{
 				Term:         n.currentTerm,
 				CandidateID:  n.NodeID,
-				lastLogIndex: n.getLastLogIndex(),
-				lastLogTerm:  n.getLastLogTerm(),
+				LastLogIndex: n.getLastLogIndex(),
+				LastLogTerm:  n.getLastLogTerm(),
 			}
+			fmt.Println("current term is: ", args.Term, " last log index: ", args.LastLogIndex, " and last log term is: ", args.LastLogTerm)
 			var reply RequestVoteReply
-			call := n.sendRequestVoteRPC(peer, &args, &reply)
+			call := n.SendRequestVoteRPC(peer, &args, &reply)
 			fmt.Println("call: ", call)
 		}(peer)
 	}
